@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import time
 import argparse
 
+print("Server started!")
 
 class Flat:
 	def __init__(self, name, link, locality, price, img):
@@ -22,10 +23,13 @@ class Flat:
 
 class Fetcher:
 	def __init__(self):
-		self.driver = webdriver.Firefox()
+		print("Starting Firefox")
 		self.options = webdriver.FirefoxOptions()
+		self.options.add_argument("--headless")
 		self.options.set_preference("javascript.enabled", True)
+		self.driver = webdriver.Firefox(options=self.options)
 		self.driver.get("https://www.sreality.cz/hledani/prodej/byty?strana=1")
+		print("Getting around the cookies stuff...")
 		time.sleep(5)
 		self.load_page(1)
 	
@@ -73,13 +77,13 @@ class MyHTTPServer(BaseHTTPRequestHandler):
 		cur.close()
 
 parser = argparse.ArgumentParser(description="Fetch data from sreality.cz and display them in a HTTP server.")
-parser.add_argument("database",
+parser.add_argument("--database", default="db", nargs="?",
                     help="The name of the postgreSQL database to connect to.")
-parser.add_argument("user",
+parser.add_argument("--user", default="user", nargs="?",
                     help="The postgreSQL username.")
-parser.add_argument("password",
+parser.add_argument("--password", default="pass", nargs="?",
                     help="The password for the given username.")
-parser.add_argument("-s", "--host", nargs="?", default="localhost",
+parser.add_argument("-s", "--host", nargs="?", default="postgres",
                     help="The IP adress of the postgreSQL database.")
 parser.add_argument("-p", "--port", type=int, nargs="?", default=5432,
                     help="The port of the postgreSQL database.")
@@ -95,7 +99,14 @@ port = args.port
 update = args.update
 num_flats = 500
 
-conn = psycopg2.connect(host=host, database=database, user=user, password=password, port=port)
+conn = None
+while True:
+	try:
+		conn = psycopg2.connect(host=host, database=database, user=user, password=password, port=port)
+		break
+	except:
+		time.sleep(0.01)
+		print("reaching postgreSQL server...")
 cur = conn.cursor()
 
 def create_db():
@@ -143,6 +154,8 @@ else:
 
 webServer = HTTPServer(("localhost", 8080), MyHTTPServer)
 print("Server started. Press Ctrl+C to stop.")
+for i in range(0, 100):
+	print("----------------------------------------------------------------------")
 try:
 	webServer.serve_forever()
 except KeyboardInterrupt:
