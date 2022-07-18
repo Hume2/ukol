@@ -2,6 +2,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+import psycopg2
 import time
 
 class Flat:
@@ -53,10 +54,60 @@ def make_html(flats):
 	result = result + "</table></body></html>"
 	return result
 
-fetch = Fetcher()
+host = "localhost"
+database = "flats"
+user = "ukol"
+password = "heslo"
+port = 5432
+num_flats = 500
+
+conn = psycopg2.connect(host=host, database=database, user=user, password=password, port=port)
+
+cur = conn.cursor()
+print('PostgreSQL database version:')
+cur.execute('SELECT version()')
+
+# display the PostgreSQL database server version
+db_version = cur.fetchone()
+print(db_version)
+print("")
+
+cur.execute("SELECT * FROM information_schema.tables WHERE table_name='flats'")
+if cur.rowcount:
+	print("Database already exists.")
+else:
+	cur.execute("""CREATE TABLE flats (
+		id INTEGER PRIMARY KEY,
+		name VARCHAR(256) NOT NULL,
+		link VARCHAR(256) NOT NULL,
+		locality VARCHAR(256) NOT NULL,
+		price VARCHAR(256) NOT NULL,
+		img VARCHAR(256) NOT NULL
+	)""")
+
+	cur.close()
+	conn.commit()
+
+	fetch = Fetcher()
+	for i in range(0, num_flats):
+		f = fetch.load_entry()
+		cur = conn.cursor()
+		print("fetching flat %d/%d"%(i, num_flats), end="\r")
+		cur.execute("INSERT INTO flats(id, name, link, locality, price, img) VALUES (%s,%s,%s,%s,%s,%s)",
+			     (i, f.name, f.link, f.locality, f.price, f.img))
+		cur.close()
+		conn.commit()
+	fetch.close()
+	print("fetching done")
+
+print("reading database")
+cur.execute("SELECT name, link, locality, price, img FROM flats ORDER BY id ASC")
+rc = cur.rowcount
 flats = []
-for i in range(0, 500):
-	flats.append(fetch.load_entry())
-fetch.close()
+row = cur.fetchone()
+while row is not None:
+	flats.append(Flat(*row))
+	row = cur.fetchone()
 print(make_html(flats))
 
+conn.close()
