@@ -3,7 +3,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 import psycopg2
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import time
+
 
 class Flat:
 	def __init__(self, name, link, locality, price, img):
@@ -14,7 +16,8 @@ class Flat:
 		self.img = img
 	
 	def as_html(self):
-		return "<tr><td><img src=\""+self.img+"\"></td><td><a href=\""+self.link+"\">"+self.name+"</a></td><td>"+self.locality+"</td><td>"+self.price+"</td></tr>"
+		return "<tr><td><img src=\""+self.img+"\"></td><td><a href=\""+self.link+"\">"+self.name+"</a></td><td>"+self.locality+"</td><td>"+self.price+"</td></tr>\n"
+
 
 class Fetcher:
 	def __init__(self):
@@ -47,12 +50,26 @@ class Fetcher:
 	def close(self):
 		self.driver.close()
 
-def make_html(flats):
-	result = "<html><body><table border=1><tr><th>Obrázek</th><th>Název</th><th>Lokalita</th><th>Cena</th></tr>\n"
-	for f in flats:
-		result = result + f.as_html() + "\n"
-	result = result + "</table></body></html>"
-	return result
+
+class MyHTTPServer(BaseHTTPRequestHandler):
+	def do_GET(self):
+		self.send_response(200)
+		self.send_header("Content-type", "text/html")
+		self.end_headers()
+		self.wfile.write(bytes("<html><head><meta charset=\"UTF-8\"></head><body>\n", "utf-8"))
+		self.wfile.write(bytes("<table border=1><tr><th>Obrázek</th><th>Název</th><th>Lokalita</th><th>Cena</th></tr>", "utf-8"))
+		global conn
+		cur = conn.cursor()
+		cur.execute("SELECT name, link, locality, price, img FROM flats ORDER BY id ASC")
+		rc = cur.rowcount
+		flats = []
+		row = cur.fetchone()
+		while row is not None:
+			flat = Flat(*row)
+			self.wfile.write(bytes(flat.as_html(), "utf-8"))
+			row = cur.fetchone()
+		self.wfile.write(bytes("</table></body></html>", "utf-8"))
+
 
 host = "localhost"
 database = "flats"
@@ -62,15 +79,7 @@ port = 5432
 num_flats = 500
 
 conn = psycopg2.connect(host=host, database=database, user=user, password=password, port=port)
-
 cur = conn.cursor()
-print('PostgreSQL database version:')
-cur.execute('SELECT version()')
-
-# display the PostgreSQL database server version
-db_version = cur.fetchone()
-print(db_version)
-print("")
 
 cur.execute("SELECT * FROM information_schema.tables WHERE table_name='flats'")
 if cur.rowcount:
@@ -100,14 +109,14 @@ else:
 	fetch.close()
 	print("fetching done")
 
-print("reading database")
-cur.execute("SELECT name, link, locality, price, img FROM flats ORDER BY id ASC")
-rc = cur.rowcount
-flats = []
-row = cur.fetchone()
-while row is not None:
-	flats.append(Flat(*row))
-	row = cur.fetchone()
-print(make_html(flats))
 
+webServer = HTTPServer(("localhost", 8080), MyHTTPServer)
+print("Server started. Press Ctrl+C to stop.")
+try:
+	webServer.serve_forever()
+except KeyboardInterrupt:
+	pass
+
+webServer.server_close()
 conn.close()
+print("Server stopped.")
