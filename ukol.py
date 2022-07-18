@@ -5,6 +5,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 import psycopg2
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import time
+import argparse
 
 
 class Flat:
@@ -69,22 +70,37 @@ class MyHTTPServer(BaseHTTPRequestHandler):
 			self.wfile.write(bytes(flat.as_html(), "utf-8"))
 			row = cur.fetchone()
 		self.wfile.write(bytes("</table></body></html>", "utf-8"))
+		cur.close()
 
+parser = argparse.ArgumentParser(description="Fetch data from sreality.cz and display them in a HTTP server.")
+parser.add_argument("database",
+                    help="The name of the postgreSQL database to connect to.")
+parser.add_argument("user",
+                    help="The postgreSQL username.")
+parser.add_argument("password",
+                    help="The password for the given username.")
+parser.add_argument("-s", "--host", nargs="?", default="localhost",
+                    help="The IP adress of the postgreSQL database.")
+parser.add_argument("-p", "--port", type=int, nargs="?", default=5432,
+                    help="The port of the postgreSQL database.")
+parser.add_argument("-u", "--update", action="store_const", const=True, default=False,
+                    help="Update the database even though it already exists.")
 
-host = "localhost"
-database = "flats"
-user = "ukol"
-password = "heslo"
-port = 5432
+args = parser.parse_args()
+host = args.host
+database = args.database
+user = args.user
+password = args.password
+port = args.port
+update = args.update
 num_flats = 500
 
 conn = psycopg2.connect(host=host, database=database, user=user, password=password, port=port)
 cur = conn.cursor()
 
-cur.execute("SELECT * FROM information_schema.tables WHERE table_name='flats'")
-if cur.rowcount:
-	print("Database already exists.")
-else:
+def create_db():
+	global conn
+	cur = conn.cursor()
 	cur.execute("""CREATE TABLE flats (
 		id INTEGER PRIMARY KEY,
 		name VARCHAR(256) NOT NULL,
@@ -109,6 +125,21 @@ else:
 	fetch.close()
 	print("fetching done")
 
+cur.execute("SELECT * FROM information_schema.tables WHERE table_name='flats'")
+if cur.rowcount:
+	if update:
+		print("The database will be updated.")
+		cur.execute("DROP TABLE flats")
+		cur.close()
+		create_db()
+		conn.commit()
+	else:
+		print("Using existing database. Use -u to update the database.")
+		cur.close()
+else:
+	print("The database was not found. It will be created.")
+	create_db()
+	cur.close()
 
 webServer = HTTPServer(("localhost", 8080), MyHTTPServer)
 print("Server started. Press Ctrl+C to stop.")
